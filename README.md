@@ -1,38 +1,65 @@
 # Scrum Canvas
 
-A local Scrum board with a browser interface and a small Node.js process for MySQL/PostgreSQL access. There is no cloud service and no Electron dependency.
+A local Scrum board with a browser interface and a small Node.js server for MySQL or PostgreSQL access. No cloud service, no Electron.
 
 ## Run it
 
+Install dependencies once:
+
 ```bash
 npm install
+```
+
+Then either double-click `start.bat` (Windows) or run:
+
+```bash
 npm start
 ```
 
-Then open <http://127.0.0.1:4173>.
+Open http://127.0.0.1:4173.
 
-The first launch opens a fully interactive demo workspace stored in browser local storage. Open **Configuration → Data sources** to connect a database. The Node process inspects `information_schema`, creates the regulated Scrum tables when they are absent, and reads an existing compatible schema when present.
+The first launch opens an interactive demo workspace stored in browser local storage. Open Configuration → Data sources to connect a MySQL or PostgreSQL database. The server inspects `information_schema`, creates the Scrum tables when they are missing, and reuses an existing compatible schema. Missing columns are added automatically.
 
-Use `SCRUM_CANVAS_PORT` or `SCRUM_CANVAS_HOST` to override the default local address. The app binds to `127.0.0.1` by default so it is not exposed to the network.
+`SCRUM_CANVAS_PORT` and `SCRUM_CANVAS_HOST` override the default address. The server binds to `127.0.0.1` by default, so it is not exposed to the network.
+
+## Features
+
+- Kanban board with configurable columns and priorities
+- Projects and branches, with a project filter
+- Tasks with requester, request time, expected finish, priority, and status
+- Sub-tasks under a main task, shown in the board and in the edit panel
+- Hover a card to preview its content
+- Movement history and a workspace note
+
+## Scripts
+
+```bash
+npm run dev      # Vite dev server (proxies /api to port 4173)
+npm run serve    # Start the API server only
+npm run build    # Build the frontend into dist/
+npm start        # Build, then serve API and frontend on 4173
+npm run check    # Syntax check the server and build the frontend
+```
 
 ## Database objects
 
-- `scrum_meta`
-- `scrum_columns`
-- `scrum_projects`
-- `scrum_priorities`
-- `scrum_tasks`
-- `scrum_task_movements`
+- scrum_meta
+- scrum_columns
+- scrum_projects
+- scrum_priorities
+- scrum_tasks
+- scrum_task_movements
+- scrum_notes
 
-Passwords are kept only in the ignored local file `server/data/config.json`. Protect that file like any other database credential.
+Connection details, including passwords, are kept only in the local file `server/data/config.json`. Treat it like any other credentials file.
 
 ## Development
 
-Run the API and Vite UI in separate terminals:
+Run the API and the Vite UI in separate terminals:
 
 ```bash
 npm run serve
 npm run dev
 ```
 
-Vite proxies `/api` to the Node process on port 4173.
+Vite proxies `/api` requests to the Node server on port 4173.
