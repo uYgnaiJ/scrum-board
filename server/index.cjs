@@ -100,8 +100,15 @@ app.post('/api/tasks/:id/move', route(async (req, res) => res.json(await databas
 app.delete('/api/tasks/:id', route(async (req, res) => res.json(await database.softDeleteTask(activeSource(), req.params.id))));
 
 const dist = path.join(__dirname, '..', 'dist');
-app.use(express.static(dist));
-app.get('*path', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+app.use(express.static(dist, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
+app.get('*path', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(dist, 'index.html'));
+});
 
 app.use((error, _req, res, _next) => {
   if (!error.status || error.status >= 500) console.error(error);

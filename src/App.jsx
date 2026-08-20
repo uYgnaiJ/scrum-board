@@ -37,6 +37,7 @@ const ids = {
 
 const day = (offset) => new Date(Date.now() + offset * 86400000).toISOString()
 const newId = () => globalThis.crypto?.randomUUID?.() || `id-${Date.now()}-${Math.random().toString(16).slice(2)}`
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'
 
 function makeDemoBoard() {
   return {
@@ -110,10 +111,35 @@ function Toast({ toast }) {
 }
 
 function Priority({ item }) {
-  return <span className="inline-flex items-center gap-1.5 text-[11px] font-medium" style={{ color: item?.color || '#777' }}><span className="size-1.5 rounded-full bg-current" />{item?.name || 'None'}</span>
+  return <span className="invisible text-[11px] font-medium group-hover:visible" style={{ color: item?.color || '#777' }}>{item?.name || 'None'}</span>
 }
 
-function TaskCard({ item, board, view, columnIndex, onEdit, onMove, onNewSubtask }) {
+function ColumnStatus({ item, board, onMove, onSuppress }) {
+  const [open, setOpen] = useState(false)
+  const openTimer = useRef(null)
+  const closeTimer = useRef(null)
+  const scheduleOpen = () => {
+    clearTimeout(closeTimer.current)
+    clearTimeout(openTimer.current)
+    openTimer.current = setTimeout(() => setOpen(true), 500)
+  }
+  const scheduleClose = () => {
+    clearTimeout(openTimer.current)
+    closeTimer.current = setTimeout(() => setOpen(false), 150)
+  }
+  return (
+    <Select open={open} onOpenChange={setOpen} value={item.column_id || undefined} onValueChange={(columnId) => onMove(item.id, columnId)}>
+      <SelectTrigger onMouseEnter={() => { onSuppress(); scheduleOpen() }} onMouseLeave={scheduleClose} className={cn('invisible h-auto w-auto gap-1 border-0 px-0 py-0 text-[10px] font-medium text-muted-foreground shadow-none group-hover:visible data-[size=default]:h-auto dark:bg-transparent dark:hover:bg-transparent', open && 'visible')}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent onMouseEnter={() => clearTimeout(closeTimer.current)} onMouseLeave={scheduleClose}>
+        {board.columns.map((column) => <SelectItem key={column.id} value={column.id}>{column.name}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  )
+}
+
+function TaskCard({ item, board, view, columnIndex, onEdit, onMove, onNewSubtask, onHoverEnter, onHoverLeave, onSuppressPreview }) {
   const rank = board.priorities.find((entry) => entry.id === item.priority_id)
   const children = board.tasks.filter((entry) => entry.parent_id === item.id)
   const project = board.projects.find((entry) => entry.id === item.project_id)
@@ -121,31 +147,27 @@ function TaskCard({ item, board, view, columnIndex, onEdit, onMove, onNewSubtask
   const path = project ? `${parentProject ? `${parentProject.name} / ` : ''}${project.name}` : 'Unassigned'
   const expected = item.expected_finish ? new Date(item.expected_finish) : null
   const soon = expected && expected.getTime() < Date.now() + 2 * 86400000
+  const tint = rank?.color && /^#[0-9a-fA-F]{6}$/.test(rank.color) ? rank.color : null
 
   return (
-    <article className="group relative border-t px-3 py-4 transition-colors hover:bg-muted/35 last:border-b">
+    <article className={cn('group relative border-t px-3 py-4 transition-colors last:border-b', tint ? 'bg-[linear-gradient(to_bottom,var(--card-tint),transparent)] hover:bg-[linear-gradient(to_bottom,var(--card-tint-hover),transparent)]' : 'hover:bg-muted/35')} style={tint ? { '--card-tint': `${tint}26`, '--card-tint-hover': `${tint}40` } : undefined} onMouseEnter={(event) => onHoverEnter(item, columnIndex, event.currentTarget.getBoundingClientRect())} onMouseLeave={onHoverLeave}>
       <div className="mb-2 flex items-center gap-2 text-[10px] text-muted-foreground">
         <span className="min-w-0 truncate">{path}</span>
         <span className="min-w-0 truncate">{item.requester}</span>
-        <span className={cn('shrink-0', soon && 'text-destructive')}>{date(item.expected_finish)}</span>
-        <span className="ml-auto shrink-0"><Priority item={rank} /></span>
+        {item.expected_finish && <span className={cn('shrink-0', soon && 'text-destructive')}>{date(item.expected_finish)}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-2"><ColumnStatus item={item} board={board} onMove={onMove} onSuppress={onSuppressPreview} /><Priority item={rank} /></span>
       </div>
       <h3 className="pr-8 text-[13px] leading-5 font-semibold cursor-pointer hover:underline" onClick={() => onEdit(item)}>{item.title}</h3>
-      {item.content && <p className="mt-1.5 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{item.content}</p>}
       {view === 'main' && children.length > 0 && (
         <div className="mt-3 space-y-2 border-t pt-3">
           {children.map((child) => {
             const status = board.columns.find((entry) => entry.id === child.column_id)
-            return <div key={child.id} className="flex items-center justify-between gap-3 text-[10px]"><span className="truncate"><span className="text-muted-foreground">└ </span><span className="font-medium">{child.title}</span></span><span className="shrink-0 font-medium" style={{ color: status?.color }}>{status?.name}</span></div>
+            return <div key={child.id} className="flex items-center justify-between gap-3 text-[10px]"><span className="min-w-0 truncate"><span className="text-muted-foreground">└ </span><span className="cursor-pointer font-medium hover:underline" onClick={() => onEdit(child)}>{child.title}</span></span><span className="shrink-0 font-medium" style={{ color: status?.color }}>{status?.name}</span></div>
           })}
         </div>
       )}
       <div className="absolute top-10 right-2 hidden items-center gap-1 group-hover:flex" onClick={(event) => event.stopPropagation()}>
         {!item.parent_id && <Tooltip><TooltipTrigger asChild><Button size="icon-xs" variant="outline" onClick={() => onNewSubtask(item)} aria-label="Add sub-task"><Plus /></Button></TooltipTrigger><TooltipContent>Add sub-task</TooltipContent></Tooltip>}
-        <span className="flex items-center">
-          {columnIndex > 0 && <Button size="icon-xs" variant="outline" className="rounded-r-none" onClick={() => onMove(item.id, board.columns[columnIndex - 1].id)}><ArrowLeft /></Button>}
-          {columnIndex < board.columns.length - 1 && <Button size="icon-xs" variant="outline" className="rounded-l-none" onClick={() => onMove(item.id, board.columns[columnIndex + 1].id)}><ArrowRight /></Button>}
-        </span>
       </div>
     </article>
   )
@@ -160,13 +182,33 @@ function BoardPage({ board, onNew, onNewSubtask, onEdit, onMove, onHistory, onCo
   const visible = (view === 'main' ? mainTasks : board.tasks).filter((item) => `${item.title} ${item.content} ${item.requester}`.toLowerCase().includes(search.toLowerCase()) && matchesProject(item))
   const columns = [...board.columns].sort((a, b) => Number(a.position) - Number(b.position))
 
+  const [preview, setPreview] = useState(null)
+  const previewTimer = useRef(null)
+  const previewShown = useRef(false)
+  const showPreview = (task, columnIndex, rect) => { previewShown.current = true; setPreview({ task, columnIndex, top: rect.top, left: rect.left, right: rect.right }) }
+  const hidePreview = () => { previewShown.current = false; clearTimeout(previewTimer.current); setPreview(null) }
+  const handleCardEnter = (task, columnIndex, rect) => {
+    clearTimeout(previewTimer.current)
+    if (previewShown.current) showPreview(task, columnIndex, rect)
+    else previewTimer.current = setTimeout(() => showPreview(task, columnIndex, rect), 1000)
+  }
+  const handleCardLeave = () => clearTimeout(previewTimer.current)
+  const previewSoon = preview?.task.expected_finish && new Date(preview.task.expected_finish).getTime() < Date.now() + 2 * 86400000
+  const previewStyle = preview
+    ? preview.columnIndex >= columns.length - 1
+      ? { top: preview.top, left: preview.left - 8, transform: 'translateX(-100%)' }
+      : { top: preview.top, left: preview.right + 8 }
+    : null
+
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden p-6">
       <header className="mb-5 flex items-center justify-between gap-6">
-        <Tabs value={view} onValueChange={setView}><TabsList><TabsTrigger value="main">Main tasks</TabsTrigger><TabsTrigger value="all">All tasks</TabsTrigger></TabsList></Tabs>
         <div className="flex items-center gap-2">
+          <Tabs value={view} onValueChange={setView}><TabsList><TabsTrigger value="main">Main tasks</TabsTrigger><TabsTrigger value="all">All tasks</TabsTrigger></TabsList></Tabs>
           <div className="relative"><Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" /><Input className="h-9 w-52 pl-8" placeholder="Search tasks" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
           <div className="w-52"><ProjectTreeSelect projects={board.projects} value={projectFilter} onChange={setProjectFilter} placeholder="All projects" allowAll /></div>
+        </div>
+        <div className="flex items-center gap-2">
           <Button variant="outline" onClick={onHistory}><Activity />History</Button>
           <Button variant="outline" onClick={onConfig}><Settings2 />Configuration</Button>
         </div>
@@ -175,16 +217,26 @@ function BoardPage({ board, onNew, onNewSubtask, onEdit, onMove, onHistory, onCo
         {columns.map((column, index) => {
           const items = visible.filter((item) => item.column_id === column.id)
           return (
-            <section key={column.id} className="min-w-0 border-r first:border-l">
+            <section key={column.id} className="min-w-0 border-r first:border-l" onMouseLeave={hidePreview}>
               <div className="flex h-14 items-center justify-between px-4">
                 <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide uppercase"><span className="size-1.5 rounded-full" style={{ background: column.color }} />{column.name}<span className="font-normal text-muted-foreground">{items.length}</span></div>
                 {Number(column.is_todo) ? <Tooltip><TooltipTrigger asChild><Button size="icon-sm" variant="outline" onClick={onNew} aria-label="Create task"><Plus /></Button></TooltipTrigger><TooltipContent>Create task in To do</TooltipContent></Tooltip> : null}
               </div>
-              <div className="px-2">{items.length ? items.map((item) => <TaskCard key={item.id} item={item} board={{ ...board, columns }} view={view} columnIndex={index} onEdit={onEdit} onMove={onMove} onNewSubtask={onNewSubtask} />) : <div className="border-t px-3 py-8 text-[11px] text-muted-foreground">No tasks in this column</div>}</div>
+              <div className="px-2">{items.length ? items.map((item) => <TaskCard key={item.id} item={item} board={{ ...board, columns }} view={view} columnIndex={index} onEdit={onEdit} onMove={onMove} onNewSubtask={onNewSubtask} onHoverEnter={handleCardEnter} onHoverLeave={handleCardLeave} onSuppressPreview={hidePreview} />) : <div className="border-t px-3 py-8 text-[11px] text-muted-foreground">No tasks in this column</div>}</div>
             </section>
           )
         })}
       </div>
+      {preview && (
+        <div className="pointer-events-none fixed z-[70] w-80 rounded-lg border bg-background p-4 shadow-lg" style={previewStyle}>
+          <div className="text-sm font-semibold">{preview.task.title}</div>
+          {preview.task.content && <p className="mt-2 text-[12px] leading-5 whitespace-pre-wrap text-muted-foreground">{preview.task.content}</p>}
+          <div className="mt-3 flex items-center justify-between border-t pt-2 text-[11px] text-muted-foreground">
+            <span>{preview.task.requester || 'No requester'}</span>
+            {preview.task.expected_finish && <span className={cn('flex items-center gap-1', previewSoon && 'text-destructive')}>{date(preview.task.expected_finish)}</span>}
+          </div>
+        </div>
+      )}
     </main>
   )
 }
@@ -205,11 +257,12 @@ function ProjectTreeSelect({ projects, value, onChange, placeholder = 'Select pr
   return <Popover modal open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button type="button" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal"><span className={cn('truncate', !selected && 'text-muted-foreground')}>{selectedPath}</span><ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" /></Button></PopoverTrigger><PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-2"><div className="max-h-72 touch-pan-y overflow-y-auto overscroll-contain" onWheel={(event) => event.stopPropagation()}>{allowAll && <Button type="button" variant="ghost" className="w-full justify-start gap-2 border-b rounded-none font-medium" onClick={() => choose('')}><Check className={cn('size-4', !value ? 'opacity-100' : 'opacity-0')} />All projects</Button>}{roots.map((root) => { const branches = projects.filter((item) => item.parent_id === root.id); return <div key={root.id} className="border-b py-1 last:border-b-0"><Button type="button" variant="ghost" className="w-full justify-start gap-2 font-medium" onClick={() => choose(root.id)}><Check className={cn('size-4', value === root.id ? 'opacity-100' : 'opacity-0')} />{root.name}</Button>{branches.length > 0 && <div className="relative ml-5 border-l pl-3">{branches.map((branch) => <Button key={branch.id} type="button" variant="ghost" className="relative w-full justify-start gap-2 font-normal before:absolute before:top-1/2 before:-left-3 before:w-3 before:border-t" onClick={() => choose(branch.id)}><Check className={cn('size-4', value === branch.id ? 'opacity-100' : 'opacity-0')} />{branch.name}</Button>)}</div>}</div> })}{!roots.length && <div className="px-3 py-6 text-center text-sm text-muted-foreground">No projects configured</div>}</div></PopoverContent></Popover>
 }
 
-function TaskDialog({ open, onOpenChange, value, setValue, board, onSave, onDelete, onOpenTask, lockedCreate }) {
+function TaskDialog({ open, onOpenChange, value, setValue, board, onSave, onDelete, onOpenTask, onMove, onNewSubtask, lockedCreate }) {
   if (!value) return null
   const editing = Boolean(value.id)
   const locked = Boolean(lockedCreate) || (editing && Boolean(value.parent_id))
   const parents = board.tasks.filter((item) => !item.parent_id && item.id !== value.id)
+  const parentTask = value.parent_id ? board.tasks.find((item) => item.id === value.parent_id) : null
   const subtasks = editing ? board.tasks.filter((item) => item.parent_id === value.id) : []
   const showSubtasks = editing && !value.parent_id
   return (
@@ -228,23 +281,18 @@ function TaskDialog({ open, onOpenChange, value, setValue, board, onSave, onDele
               <Input required placeholder="Requester" value={value.requester || ''} onChange={(event) => setValue({ ...value, requester: event.target.value })} />
               <Select value={value.column_id || undefined} onValueChange={(column_id) => setValue({ ...value, column_id })}><SelectTrigger className="w-full"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent>{board.columns.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
             </div>
-            <Select value={value.parent_id || '__main'} onValueChange={(parent_id) => setValue({ ...value, parent_id: parent_id === '__main' ? '' : parent_id })} disabled={locked}><SelectTrigger className="w-full" disabled={locked}><SelectValue placeholder="Parent task" /></SelectTrigger><SelectContent><SelectItem value="__main">This is a main task</SelectItem>{parents.map((item) => <SelectItem key={item.id} value={item.id}>{item.title}</SelectItem>)}</SelectContent></Select>
+            {locked && value.parent_id ? <button type="button" onClick={() => parentTask && onOpenTask(parentTask)} className="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"><ArrowLeft className="size-3.5 shrink-0" /><span className="truncate">{parentTask?.title || 'Parent task'}</span></button> : <Select value={value.parent_id || '__main'} onValueChange={(parent_id) => setValue({ ...value, parent_id: parent_id === '__main' ? '' : parent_id })}><SelectTrigger className="w-full"><SelectValue placeholder="Parent task" /></SelectTrigger><SelectContent><SelectItem value="__main">This is a main task</SelectItem>{parents.map((item) => <SelectItem key={item.id} value={item.id}>{item.title}</SelectItem>)}</SelectContent></Select>}
             {editing && <div className="flex gap-6 border-t pt-3 text-[10px] text-muted-foreground"><span>Created {dateTime(value.created_at)}</span><span>Edited {dateTime(value.updated_at)}</span></div>}
-            <DialogFooter className="items-center sm:justify-between">{editing ? <Button type="button" variant="destructive" onClick={onDelete}>Soft delete</Button> : <span />}<Button type="submit">{editing ? 'Save changes' : 'Create task'}</Button></DialogFooter>
+            <DialogFooter className="items-center sm:justify-between">{editing ? <Button type="button" variant="link" className="text-destructive hover:text-destructive" onClick={onDelete}>Delete</Button> : <span />}<Button type="submit">{editing ? 'Save changes' : 'Create task'}</Button></DialogFooter>
           </form>
           {showSubtasks && (
-            <aside className="hidden w-64 shrink-0 border-l pl-5 sm:block">
-              <h4 className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">Sub tasks ({subtasks.length})</h4>
-              <div className="mt-3 max-h-[52vh] space-y-2 overflow-y-auto">
-                {subtasks.length ? subtasks.map((child) => {
-                  const status = board.columns.find((entry) => entry.id === child.column_id)
-                  return (
-                    <button key={child.id} type="button" onClick={() => onOpenTask(child)} className="w-full rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/40">
-                      <div className="line-clamp-2 text-xs leading-4 font-medium">{child.title}</div>
-                      <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground"><span className="truncate">{child.requester}</span><span className="shrink-0 font-medium" style={{ color: status?.color }}>{status?.name}</span></div>
-                    </button>
-                  )
-                }) : <p className="text-xs text-muted-foreground">No sub tasks yet.</p>}
+            <aside className="hidden w-80 shrink-0 border-l pl-5 sm:block">
+              <div className="flex items-center justify-between">
+                <h4 className="text-[11px] font-semibold tracking-wide uppercase text-muted-foreground">Sub tasks ({subtasks.length})</h4>
+                {onNewSubtask && <Tooltip><TooltipTrigger asChild><Button size="icon-sm" variant="outline" onClick={() => onNewSubtask(value)} aria-label="Add sub-task"><Plus /></Button></TooltipTrigger><TooltipContent>Add sub-task</TooltipContent></Tooltip>}
+              </div>
+              <div className="mt-3 max-h-[52vh] overflow-y-auto">
+                {subtasks.length ? subtasks.map((child) => <TaskCard key={child.id} item={child} board={board} view="all" columnIndex={0} onEdit={onOpenTask} onMove={onMove} onNewSubtask={() => {}} onHoverEnter={() => {}} onHoverLeave={() => {}} onSuppressPreview={() => {}} />) : <p className="py-6 text-xs text-muted-foreground">No sub tasks yet.</p>}
               </div>
             </aside>
           )}
@@ -330,7 +378,7 @@ function ConfigPage({ onBoard, ...props }) {
     ['datasources', Database, 'Data sources'], ['columns', Columns3, 'Board columns'],
     ['projects', ListTree, 'Projects & branches'], ['priorities', Activity, 'Priorities'],
   ]
-  return <main className="h-full overflow-y-auto"><div className="mx-auto max-w-7xl px-8 py-6"><header className="mb-6 flex items-center justify-between"><Button variant="outline" onClick={onBoard}><ArrowLeft />Board</Button><Tabs value={tab} onValueChange={setTab}><TabsList>{tabs.map(([id, Icon, label]) => <TabsTrigger key={id} value={id}><Icon />{label}</TabsTrigger>)}</TabsList></Tabs></header><div className="min-w-0 border-t">
+  return <main className="h-full overflow-y-auto"><div className="mx-auto max-w-7xl px-8 py-6"><header className="mb-6 flex items-center justify-between"><Button variant="outline" onClick={onBoard}><ArrowLeft />Board</Button><div className="flex items-center gap-4"><Tabs value={tab} onValueChange={setTab}><TabsList>{tabs.map(([id, Icon, label]) => <TabsTrigger key={id} value={id}><Icon />{label}</TabsTrigger>)}</TabsList></Tabs><span className="text-xs text-muted-foreground">v{APP_VERSION}</span></div></header><div className="min-w-0 border-t">
     {tab === 'datasources' && <DatasourceConfig {...props.datasourceProps} />}
     {tab === 'columns' && <SimpleConfig type="column" items={props.board.columns} {...props.columnProps} />}
     {tab === 'projects' && <ProjectTree projects={props.board.projects} {...props.projectProps} />}
@@ -536,5 +584,5 @@ export function App() {
     priorityProps: { onAdd: () => openAddConfig('priority'), onEdit: (id) => openEditConfig('priority', id), onDelete: (id) => requestDeleteConfig('priority', id), onShift: () => {} },
   }
 
-  return <TooltipProvider><div className="h-full min-w-[1024px] bg-background">{page === 'board' ? <BoardPage board={board} onNew={newTask} onNewSubtask={newSubtask} onEdit={editTask} onMove={moveTask} onHistory={() => setHistoryOpen(true)} onConfig={() => setPage('config')} /> : <ConfigPage board={board} onBoard={() => setPage('board')} {...configProps} />}<TaskDialog open={taskOpen} onOpenChange={setTaskOpen} value={taskValue} setValue={setTaskValue} board={board} onSave={saveTask} onDelete={() => setDeleteTarget({ type: 'task', id: taskValue.id, label: 'task' })} onOpenTask={editTask} lockedCreate={lockedCreate} /><ConfigItemDialog value={configEditor} setValue={setConfigEditor} onSave={saveConfigEditor} onOpenChange={(open) => { if (!open) setConfigEditor(null) }} /><ConfirmDeleteDialog target={deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }} onConfirm={confirmDelete} /><HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} board={board} /><FloatingNote open={noteOpen} setOpen={setNoteOpen} content={noteContent} setContent={setNoteContent} status={noteStatus} /><Toast toast={toast} /></div></TooltipProvider>
+  return <TooltipProvider><div className="h-full min-w-[1024px] bg-background">{page === 'board' ? <BoardPage board={board} onNew={newTask} onNewSubtask={newSubtask} onEdit={editTask} onMove={moveTask} onHistory={() => setHistoryOpen(true)} onConfig={() => setPage('config')} /> : <ConfigPage board={board} onBoard={() => setPage('board')} {...configProps} />}<TaskDialog open={taskOpen} onOpenChange={setTaskOpen} value={taskValue} setValue={setTaskValue} board={board} onSave={saveTask} onDelete={() => setDeleteTarget({ type: 'task', id: taskValue.id, label: 'task' })} onOpenTask={editTask} onMove={moveTask} onNewSubtask={newSubtask} lockedCreate={lockedCreate} /><ConfigItemDialog value={configEditor} setValue={setConfigEditor} onSave={saveConfigEditor} onOpenChange={(open) => { if (!open) setConfigEditor(null) }} /><ConfirmDeleteDialog target={deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }} onConfirm={confirmDelete} /><HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} board={board} /><FloatingNote open={noteOpen} setOpen={setNoteOpen} content={noteContent} setContent={setNoteContent} status={noteStatus} /><Toast toast={toast} /></div></TooltipProvider>
 }
