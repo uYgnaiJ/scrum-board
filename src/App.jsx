@@ -167,7 +167,7 @@ function TaskCard({ item, board, view, columnIndex, onEdit, onMove, onNewSubtask
         </div>
       )}
       <div className="absolute top-10 right-2 hidden items-center gap-1 group-hover:flex" onClick={(event) => event.stopPropagation()}>
-        {!item.parent_id && <Tooltip><TooltipTrigger asChild><Button size="icon-xs" variant="outline" onClick={() => onNewSubtask(item)} aria-label="Add sub-task"><Plus /></Button></TooltipTrigger><TooltipContent>Add sub-task</TooltipContent></Tooltip>}
+        {!item.parent_id && <Tooltip><TooltipTrigger asChild><Button size="icon-xs" variant="outline" onClick={() => onNewSubtask(item)} aria-label="Add sub-task"><Plus /></Button></TooltipTrigger><TooltipContent side="left">Add sub-task</TooltipContent></Tooltip>}
       </div>
     </article>
   )
@@ -222,7 +222,7 @@ function BoardPage({ board, onNew, onNewSubtask, onEdit, onMove, onHistory, onCo
                 <div className="flex items-center gap-2 text-[11px] font-semibold tracking-wide uppercase"><span className="size-1.5 rounded-full" style={{ background: column.color }} />{column.name}<span className="font-normal text-muted-foreground">{items.length}</span></div>
                 {Number(column.is_todo) ? <Tooltip><TooltipTrigger asChild><Button size="icon-sm" variant="outline" onClick={onNew} aria-label="Create task"><Plus /></Button></TooltipTrigger><TooltipContent>Create task in To do</TooltipContent></Tooltip> : null}
               </div>
-              <div className="px-2">{items.length ? items.map((item) => <TaskCard key={item.id} item={item} board={{ ...board, columns }} view={view} columnIndex={index} onEdit={onEdit} onMove={onMove} onNewSubtask={onNewSubtask} onHoverEnter={handleCardEnter} onHoverLeave={handleCardLeave} onSuppressPreview={hidePreview} />) : <div className="border-t px-3 py-8 text-[11px] text-muted-foreground">No tasks in this column</div>}</div>
+              <div className="px-2">{items.length ? items.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0)).map((item) => <TaskCard key={item.id} item={item} board={{ ...board, columns }} view={view} columnIndex={index} onEdit={onEdit} onMove={onMove} onNewSubtask={onNewSubtask} onHoverEnter={handleCardEnter} onHoverLeave={handleCardLeave} onSuppressPreview={hidePreview} />) : <div className="border-t px-3 py-8 text-[11px] text-muted-foreground">No tasks in this column</div>}</div>
             </section>
           )
         })}
@@ -479,14 +479,14 @@ export function App() {
 
   const newTask = () => {
     const todo = board.columns.find((item) => Number(item.is_todo)) || board.columns[0]
-    setTaskValue({ title: '', content: '', requester: '', requested_at: '', expected_finish: '', project_id: '', priority_id: board.priorities[1]?.id || board.priorities[0]?.id, column_id: todo?.id, parent_id: '' })
+    setTaskValue({ title: '', content: '', requester: '', requested_at: inputDate(new Date().toISOString()), expected_finish: '', project_id: '', priority_id: board.priorities[1]?.id || board.priorities[0]?.id, column_id: todo?.id, parent_id: '' })
     setLockedCreate(false)
     setTaskOpen(true)
   }
   const editTask = (item) => { setTaskValue({ ...item }); setLockedCreate(false); setTaskOpen(true) }
   const newSubtask = (parent) => {
     const todo = board.columns.find((item) => Number(item.is_todo)) || board.columns[0]
-    setTaskValue({ title: '', content: '', requester: '', requested_at: '', expected_finish: '', project_id: parent.project_id || '', priority_id: board.priorities[1]?.id || board.priorities[0]?.id, column_id: todo?.id, parent_id: parent.id })
+    setTaskValue({ title: '', content: '', requester: '', requested_at: inputDate(new Date().toISOString()), expected_finish: '', project_id: parent.project_id || '', priority_id: board.priorities[1]?.id || board.priorities[0]?.id, column_id: todo?.id, parent_id: parent.id })
     setLockedCreate(true)
     setTaskOpen(true)
   }
